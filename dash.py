@@ -3,6 +3,8 @@ from google.cloud import bigquery
 from dotenv import load_dotenv
 import pandas as pd
 import time
+from google.oauth2 import service_account
+import json
 
 st.set_page_config(layout="wide")
 st.title("⏳ Archaeology Timeline Explorer")
@@ -10,9 +12,24 @@ st.title("⏳ Archaeology Timeline Explorer")
 # 1. Load Data (Executed only once on boot)
 @st.cache_data
 def load_bq_data():
-    load_dotenv()
-    client = bigquery.Client()
-    query = """
+   client = None
+    
+    # 1. Try loading from Streamlit Cloud Secrets first
+   try:
+        if "gcp_service_account" in st.secrets:
+            credentials_dict = dict(st.secrets["gcp_service_account"])
+            credentials = service_account.Credentials.from_service_account_info(credentials_dict)
+            client = bigquery.Client(credentials=credentials, project=credentials.project_id)
+   except (FileNotFoundError, Exception):
+        # StreamlitSecretNotFoundError inherits from FileNotFoundError / Exception, 
+        # so this safely catches it when running locally without a secrets.toml file
+        pass
+
+   # 2. Fallback for local development (uses GOOGLE_APPLICATION_CREDENTIALS from .env)
+   if client is None:
+        # If GOOGLE_APPLICATION_CREDENTIALS is set in your .env file, BigQuery will pick it up automatically
+        client = bigquery.Client(project="dbt-analytics-500510") 
+   query = """
         SELECT 
             latitude,
             longitude,
@@ -24,7 +41,7 @@ def load_bq_data():
        FROM `peru-archaeology.core.fct_artifacts` 
        WHERE latitude IS NOT NULL AND longitude IS NOT NULL
     """
-    return client.query(query).to_dataframe()
+   return client.query(query).to_dataframe()
 
 df = load_bq_data()
 
